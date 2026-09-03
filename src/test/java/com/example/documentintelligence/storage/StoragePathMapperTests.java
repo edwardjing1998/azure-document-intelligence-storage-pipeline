@@ -18,7 +18,7 @@ class StoragePathMapperTests {
 
     @Test
     void normalizesPrefixes() {
-        assertThat(mapper.normalizePrefix("/source\\book-01"))
+        assertThat(mapper.normalizePrefix("/source\\book-011"))
                 .isEqualTo("source/book-011/");
     }
 }
