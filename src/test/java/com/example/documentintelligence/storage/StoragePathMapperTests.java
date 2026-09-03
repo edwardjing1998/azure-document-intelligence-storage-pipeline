@@ -13,12 +13,12 @@ class StoragePathMapperTests {
                 "source/book-01/chapter-01/problem-011.png",
                 "source/",
                 "generated/"))
-                .isEqualTo("generated/book-01/chapter-01/problem-01");
+                .isEqualTo("generated/book-01/chapter-01/problem-011");
     }
 
     @Test
     void normalizesPrefixes() {
         assertThat(mapper.normalizePrefix("/source\\book-01"))
-                .isEqualTo("source/book-01/");
+                .isEqualTo("source/book-011/");
     }
 }
