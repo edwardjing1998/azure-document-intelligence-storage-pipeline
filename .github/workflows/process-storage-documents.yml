@@ -75,9 +75,9 @@ jobs:
       - name: Validate workflow inputs and configuration
         shell: bash
         env:
-          OIDC_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          OIDC_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          OIDC_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          OIDC_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          OIDC_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          OIDC_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           set -euo pipefail
 
@@ -129,14 +129,15 @@ jobs:
       - name: Log in to Azure with GitHub OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Verify Azure identity and storage access
         shell: bash
         run: |
           set -euo pipefail
+
           az account show \
             --query '{subscription:name, subscriptionId:id, tenantId:tenantId}' \
             --output table
@@ -165,13 +166,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APP_JAR="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -n 1)"
+
+          APP_JAR="$(
+            find target \
+              -maxdepth 1 \
+              -type f \
+              -name '*.jar' \
+              ! -name '*.original' \
+              | head -n 1
+          )"
+
           if [[ -z "$APP_JAR" ]]; then
             echo "Spring Boot JAR was not found under target/."
             exit 1
           fi
 
           nohup java -jar "$APP_JAR" > application.log 2>&1 &
+
           echo "APP_PID=$!" >> "$GITHUB_ENV"
           echo "Started $APP_JAR"
 
@@ -179,6 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           for attempt in {1..45}; do
             if curl \
               --silent \
@@ -210,18 +222,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          HTTP_STATUS="$(curl \
-            --silent \
-            --show-error \
-            --max-time 3300 \
-            --output batch-response.json \
-            --write-out '%{http_code}' \
-            --request POST \
-            --data-urlencode "sourcePrefix=$SOURCE_PREFIX" \
-            --data-urlencode "outputPrefix=$OUTPUT_PREFIX" \
-            --data-urlencode "maxFiles=$MAX_FILES" \
-            --data-urlencode "overwrite=$OVERWRITE" \
-            "http://localhost:$SERVER_PORT/api/storage-documents/process")"
+
+          HTTP_STATUS="$(
+            curl \
+              --silent \
+              --show-error \
+              --max-time 3300 \
+              --output batch-response.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              --data-urlencode "sourcePrefix=$SOURCE_PREFIX" \
+              --data-urlencode "outputPrefix=$OUTPUT_PREFIX" \
+              --data-urlencode "maxFiles=$MAX_FILES" \
+              --data-urlencode "overwrite=$OVERWRITE" \
+              "http://localhost:$SERVER_PORT/api/storage-documents/process"
+          )"
 
           if [[ "$HTTP_STATUS" != "200" ]]; then
             echo "Batch endpoint returned HTTP $HTTP_STATUS."
@@ -240,7 +255,8 @@ jobs:
           echo "Failed: $FAILED"
 
           if (( FAILED > 0 )); then
-            echo "One or more source files failed. See batch-response.json and application.log."
+            echo "One or more source files failed."
+            echo "See batch-response.json and application.log."
             exit 1
           fi
 
