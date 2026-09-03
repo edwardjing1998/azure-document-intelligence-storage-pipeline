@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-document-intelligence-storage-pipeline
+  labels:
+    app: azure-document-intelligence-storage-pipeline
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: azure-document-intelligence-storage-pipeline
+  template:
+    metadata:
+      labels:
+        app: azure-document-intelligence-storage-pipeline
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: azure-document-intelligence-storage-pipeline
+          image: ghcr.io/example/azure-document-intelligence-storage-pipeline:replace-by-workflow
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: document-intelligence-runtime-config
+            - secretRef:
+                name: document-intelligence-runtime-secret
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault

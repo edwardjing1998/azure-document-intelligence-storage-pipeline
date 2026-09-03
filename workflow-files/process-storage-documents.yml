@@ -1,0 +1,270 @@
+name: Process Azure Storage documents
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment and Azure configuration
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+        default: dev
+      source_prefix:
+        description: Azure Blob source prefix
+        required: true
+        type: string
+        default: source/
+      output_prefix:
+        description: Azure Blob generated-output prefix
+        required: true
+        type: string
+        default: generated/
+      max_files:
+        description: Maximum images to examine (1-100)
+        required: true
+        type: string
+        default: "20"
+      overwrite:
+        description: Replace completed Markdown output
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: document-intelligence-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  process:
+    name: Process ${{ inputs.environment }} documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+
+    env:
+      SERVER_PORT: "5555"
+      DOCUMENT_INTELLIGENCE_ENDPOINT: ${{ vars.DOCUMENT_INTELLIGENCE_ENDPOINT }}
+      DOCUMENT_INTELLIGENCE_KEY: ${{ secrets.DOCUMENT_INTELLIGENCE_KEY }}
+      AZURE_STORAGE_ENDPOINT: ${{ vars.AZURE_STORAGE_ENDPOINT }}
+      AZURE_STORAGE_CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER }}
+      AZURE_STORAGE_SOURCE_PREFIX: ${{ inputs.source_prefix }}
+      AZURE_STORAGE_OUTPUT_PREFIX: ${{ inputs.output_prefix }}
+      SOURCE_PREFIX: ${{ inputs.source_prefix }}
+      OUTPUT_PREFIX: ${{ inputs.output_prefix }}
+      MAX_FILES: ${{ inputs.max_files }}
+      OVERWRITE: ${{ inputs.overwrite }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Validate workflow inputs and configuration
+        shell: bash
+        env:
+          OIDC_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          OIDC_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          OIDC_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$MAX_FILES" =~ ^[0-9]+$ ]] || (( MAX_FILES < 1 || MAX_FILES > 100 )); then
+            echo "max_files must be an integer from 1 through 100."
+            exit 1
+          fi
+
+          if [[ -z "$SOURCE_PREFIX" || ! "$SOURCE_PREFIX" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "source_prefix is empty or contains unsupported characters."
+            exit 1
+          fi
+
+          if [[ -z "$OUTPUT_PREFIX" || ! "$OUTPUT_PREFIX" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "output_prefix is empty or contains unsupported characters."
+            exit 1
+          fi
+
+          if [[ "$SOURCE_PREFIX" == "$OUTPUT_PREFIX" ]]; then
+            echo "source_prefix and output_prefix must be different."
+            exit 1
+          fi
+
+          required_values=(
+            DOCUMENT_INTELLIGENCE_ENDPOINT
+            DOCUMENT_INTELLIGENCE_KEY
+            AZURE_STORAGE_ENDPOINT
+            AZURE_STORAGE_CONTAINER
+            OIDC_CLIENT_ID
+            OIDC_TENANT_ID
+            OIDC_SUBSCRIPTION_ID
+          )
+
+          for name in "${required_values[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required GitHub Environment variable or secret is missing: $name"
+              exit 1
+            fi
+          done
+
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Storage container: $AZURE_STORAGE_CONTAINER"
+          echo "Source prefix: $SOURCE_PREFIX"
+          echo "Output prefix: $OUTPUT_PREFIX"
+          echo "Maximum files: $MAX_FILES"
+          echo "Overwrite: $OVERWRITE"
+          echo "Required configuration is present. Secret values were not displayed."
+
+      - name: Log in to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify Azure identity and storage access
+        shell: bash
+        run: |
+          set -euo pipefail
+          az account show \
+            --query '{subscription:name, subscriptionId:id, tenantId:tenantId}' \
+            --output table
+
+          STORAGE_HOST="${AZURE_STORAGE_ENDPOINT#https://}"
+          STORAGE_HOST="${STORAGE_HOST%%/*}"
+          STORAGE_ACCOUNT_NAME="${STORAGE_HOST%%.*}"
+
+          az storage blob list \
+            --account-name "$STORAGE_ACCOUNT_NAME" \
+            --container-name "$AZURE_STORAGE_CONTAINER" \
+            --prefix "$SOURCE_PREFIX" \
+            --auth-mode login \
+            --num-results 1 \
+            --query '[].name' \
+            --output table
+
+      - name: Build and test
+        run: |
+          mvn \
+            --batch-mode \
+            --no-transfer-progress \
+            verify
+
+      - name: Start Spring Boot application
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_JAR="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -n 1)"
+          if [[ -z "$APP_JAR" ]]; then
+            echo "Spring Boot JAR was not found under target/."
+            exit 1
+          fi
+
+          nohup java -jar "$APP_JAR" > application.log 2>&1 &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+          echo "Started $APP_JAR"
+
+      - name: Wait for application readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..45}; do
+            if curl \
+              --silent \
+              --fail \
+              --get \
+              --data-urlencode "sourcePrefix=$SOURCE_PREFIX" \
+              --data-urlencode "maxFiles=1" \
+              "http://localhost:$SERVER_PORT/api/storage-documents/source-files" \
+              > readiness.json; then
+              echo "Application and Azure Storage are ready."
+              exit 0
+            fi
+
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "The Spring Boot process stopped during startup."
+              tail -n 200 application.log
+              exit 1
+            fi
+
+            echo "Waiting for application startup ($attempt/45)."
+            sleep 2
+          done
+
+          echo "Application did not become ready within 90 seconds."
+          tail -n 200 application.log
+          exit 1
+
+      - name: Process Azure Storage images
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP_STATUS="$(curl \
+            --silent \
+            --show-error \
+            --max-time 3300 \
+            --output batch-response.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            --data-urlencode "sourcePrefix=$SOURCE_PREFIX" \
+            --data-urlencode "outputPrefix=$OUTPUT_PREFIX" \
+            --data-urlencode "maxFiles=$MAX_FILES" \
+            --data-urlencode "overwrite=$OVERWRITE" \
+            "http://localhost:$SERVER_PORT/api/storage-documents/process")"
+
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "Batch endpoint returned HTTP $HTTP_STATUS."
+            jq . batch-response.json 2>/dev/null || cat batch-response.json
+            exit 1
+          fi
+
+          jq . batch-response.json
+
+          FAILED="$(jq -r '.failed // 0' batch-response.json)"
+          SUCCEEDED="$(jq -r '.succeeded // 0' batch-response.json)"
+          SKIPPED="$(jq -r '.skipped // 0' batch-response.json)"
+
+          echo "Succeeded: $SUCCEEDED"
+          echo "Skipped: $SKIPPED"
+          echo "Failed: $FAILED"
+
+          if (( FAILED > 0 )); then
+            echo "One or more source files failed. See batch-response.json and application.log."
+            exit 1
+          fi
+
+      - name: Upload batch report and application log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-processing-${{ inputs.environment }}-${{ github.run_number }}
+          path: |
+            batch-response.json
+            readiness.json
+            application.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop Spring Boot application
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${APP_PID:-}" ]] && kill -0 "$APP_PID" 2>/dev/null; then
+            kill "$APP_PID"
+            wait "$APP_PID" 2>/dev/null || true
+          fi
+
+      - name: Log out from Azure
+        if: always()
+        run: az logout

@@ -1,0 +1,26 @@
+server:
+  port: 5555
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+azure:
+  document-intelligence:
+    endpoint: ${DOCUMENT_INTELLIGENCE_ENDPOINT:}
+    key: ${DOCUMENT_INTELLIGENCE_KEY:}
+    api-version: 2024-11-30
+    premium-features: ${DOCUMENT_INTELLIGENCE_PREMIUM_FEATURES:false}
+    polling-interval-millis: 2000
+    maximum-polling-attempts: 30
+    maximum-retry-attempts: ${DOCUMENT_INTELLIGENCE_MAXIMUM_RETRY_ATTEMPTS:6}
+    default-retry-delay-millis: ${DOCUMENT_INTELLIGENCE_DEFAULT_RETRY_DELAY_MILLIS:2000}
+    maximum-retry-delay-millis: ${DOCUMENT_INTELLIGENCE_MAXIMUM_RETRY_DELAY_MILLIS:90000}
+  storage:
+    endpoint: ${AZURE_STORAGE_ENDPOINT:}
+    connection-string: ${AZURE_STORAGE_CONNECTION_STRING:}
+    container: ${AZURE_STORAGE_CONTAINER:documents}
+    source-prefix: ${AZURE_STORAGE_SOURCE_PREFIX:source/}
+    output-prefix: ${AZURE_STORAGE_OUTPUT_PREFIX:generated/}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-document-intelligence-storage-pipeline
+  labels:
+    app: azure-document-intelligence-storage-pipeline
+spec:
+  selector:
+    app: azure-document-intelligence-storage-pipeline
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
