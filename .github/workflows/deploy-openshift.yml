@@ -8,10 +8,10 @@ on:
         required: true
         type: choice
         options:
-          - dev
+          - development
           - qa
-          - prod
-        default: dev
+          - production
+        default: development
 
 permissions:
   contents: read
