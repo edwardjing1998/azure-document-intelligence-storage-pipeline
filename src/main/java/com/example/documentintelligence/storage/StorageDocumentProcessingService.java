@@ -91,11 +91,13 @@ public class StorageDocumentProcessingService {
         BlobContainerClient container = clientProvider.get();
         String outputBase = pathMapper.outputBase(source.getName(), sourcePrefix, outputPrefix);
         String markdownBlob = outputBase + "/content.md";
+        String layoutBlob = outputBase + "/layout.json";
         BlobClient markdownClient = container.getBlobClient(markdownBlob);
+        BlobClient layoutClient = container.getBlobClient(layoutBlob);
 
         // Avoid consuming Document Intelligence quota for work that is already complete.
-        if (!overwrite && markdownClient.exists()) {
-            return FileProcessResult.skipped(source.getName(), markdownBlob);
+        if (!overwrite && markdownClient.exists() && layoutClient.exists()) {
+            return FileProcessResult.skipped(source.getName(), markdownBlob, layoutBlob);
         }
 
         BlobClient sourceClient = container.getBlobClient(source.getName());
@@ -106,18 +108,27 @@ public class StorageDocumentProcessingService {
         List<String> figureBlobs = new ArrayList<>();
         for (ExtractedFigure figure : analysis.figures()) {
             String figureBlob = outputBase + "/figures/" + figure.fileName();
-            // content.md is the completion marker. Existing figures without it are partial output.
             upload(container.getBlobClient(figureBlob), figure.content(), "image/png", true);
             figureBlobs.add(figureBlob);
         }
 
-        String markdown = frontMatter(source.getName()) + packageService.connectFigures(analysis);
         upload(
-                markdownClient,
-                markdown.getBytes(StandardCharsets.UTF_8),
-                "text/markdown; charset=UTF-8",
-                overwrite);
-        return FileProcessResult.success(source.getName(), markdownBlob, figureBlobs);
+                layoutClient,
+                analysis.layoutJson().getBytes(StandardCharsets.UTF_8),
+                "application/json; charset=UTF-8",
+                true);
+
+        String markdown = frontMatter(source.getName()) + packageService.connectFigures(analysis);
+        // content.md is written last and remains the completion marker.
+        if (overwrite || !markdownClient.exists()) {
+            upload(
+                    markdownClient,
+                    markdown.getBytes(StandardCharsets.UTF_8),
+                    "text/markdown; charset=UTF-8",
+                    true);
+        }
+        return FileProcessResult.success(
+                source.getName(), markdownBlob, layoutBlob, figureBlobs);
     }
 
     private List<BlobItem> imageBlobs(String prefix, int maxFiles) {

@@ -98,11 +98,27 @@ public class DocumentIntelligenceService {
             String status = result.path("status").asText();
 
             if ("succeeded".equalsIgnoreCase(status)) {
-                String markdown = result.path("analyzeResult").path("content").asText();
+                String markdown = result
+                        .path("analyzeResult")
+                        .path("content")
+                        .asText();
+
+                String layoutJson = objectMapper
+                        .writerWithDefaultPrettyPrinter()
+                        .writeValueAsString(result);
+
                 String resultId = resultIdFrom(operationUrl);
+
                 List<ExtractedFigure> figures = downloadFigures(
-                        resultId, result.path("analyzeResult").path("figures"));
-                return new DocumentAnalysisResult(markdown, figures);
+                        resultId,
+                        result.path("analyzeResult").path("figures")
+                );
+
+                return new DocumentAnalysisResult(
+                        markdown,
+                        layoutJson,
+                        figures
+                );
             }
             if ("failed".equalsIgnoreCase(status)) {
                 throw new DocumentAnalysisException(
