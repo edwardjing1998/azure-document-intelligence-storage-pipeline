@@ -12,6 +12,14 @@ on:
           - qa
           - production
         default: development
+      image_cleaning:
+        description: Enable optional handwriting removal/inpainting preprocessing
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions:
   contents: read
@@ -147,6 +155,7 @@ jobs:
           AZURE_STORAGE_SOURCE_PREFIX: ${{ vars.AZURE_STORAGE_SOURCE_PREFIX }}
           AZURE_STORAGE_OUTPUT_PREFIX: ${{ vars.AZURE_STORAGE_OUTPUT_PREFIX }}
           SERVER_PORT: ${{ vars.SERVER_PORT }}
+          IMAGE_CLEANING_ENABLED: ${{ inputs.image_cleaning }}
         run: |
           set -euo pipefail
           oc create configmap document-intelligence-runtime-config \
@@ -156,6 +165,7 @@ jobs:
             --from-literal=AZURE_STORAGE_SOURCE_PREFIX="${AZURE_STORAGE_SOURCE_PREFIX:-source/}" \
             --from-literal=AZURE_STORAGE_OUTPUT_PREFIX="${AZURE_STORAGE_OUTPUT_PREFIX:-generated/}" \
             --from-literal=SERVER_PORT="${SERVER_PORT:-8080}" \
+            --from-literal=IMAGE_CLEANING_ENABLED="$IMAGE_CLEANING_ENABLED" \
             --dry-run=client -o yaml | oc apply -f -
 
       - name: Create application Secret

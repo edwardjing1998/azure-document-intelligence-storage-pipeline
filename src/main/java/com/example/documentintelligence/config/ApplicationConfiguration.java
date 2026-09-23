@@ -10,7 +10,8 @@ import java.time.Duration;
 @Configuration
 @EnableConfigurationProperties({
         DocumentIntelligenceProperties.class,
-        AzureStorageProperties.class
+        AzureStorageProperties.class,
+        ImageCleaningProperties.class
 })
 public class ApplicationConfiguration {
     @Bean

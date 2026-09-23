@@ -14,6 +14,7 @@ import com.example.documentintelligence.service.AnalysisPackageService;
 import com.example.documentintelligence.service.DocumentAnalysisResult;
 import com.example.documentintelligence.service.DocumentIntelligenceService;
 import com.example.documentintelligence.service.ExtractedFigure;
+import com.example.documentintelligence.service.ImageCleaningService;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -29,18 +30,21 @@ public class StorageDocumentProcessingService {
     private final StoragePathMapper pathMapper;
     private final DocumentIntelligenceService documentIntelligence;
     private final AnalysisPackageService packageService;
+    private final ImageCleaningService imageCleaningService;
 
     public StorageDocumentProcessingService(
             BlobContainerClientProvider clientProvider,
             AzureStorageProperties properties,
             StoragePathMapper pathMapper,
             DocumentIntelligenceService documentIntelligence,
-            AnalysisPackageService packageService) {
+            AnalysisPackageService packageService,
+            ImageCleaningService imageCleaningService) {
         this.clientProvider = clientProvider;
         this.properties = properties;
         this.pathMapper = pathMapper;
         this.documentIntelligence = documentIntelligence;
         this.packageService = packageService;
+        this.imageCleaningService = imageCleaningService;
     }
 
     public List<SourceBlobResponse> listSourceImages(String requestedPrefix, int maxFiles) {
@@ -103,7 +107,8 @@ public class StorageDocumentProcessingService {
         BlobClient sourceClient = container.getBlobClient(source.getName());
         byte[] image = sourceClient.downloadContent().toBytes();
         String contentType = contentType(source);
-        DocumentAnalysisResult analysis = documentIntelligence.analyze(image, contentType);
+        byte[] imageForAnalysis = imageCleaningService.prepareForAnalysis(image, contentType);
+        DocumentAnalysisResult analysis = documentIntelligence.analyze(imageForAnalysis, contentType);
 
         List<String> figureBlobs = new ArrayList<>();
         for (ExtractedFigure figure : analysis.figures()) {
