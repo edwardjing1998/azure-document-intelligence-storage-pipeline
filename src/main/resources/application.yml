@@ -1,15 +1,6 @@
 server:
   port: 5555
 
-image-cleaning:
-  # Disabled by default. The bundled cleaner targets strongly colored marks.
-  enabled: ${IMAGE_CLEANING_ENABLED:false}
-  saturation-threshold: ${IMAGE_CLEANING_SATURATION_THRESHOLD:80}
-  minimum-brightness: ${IMAGE_CLEANING_MINIMUM_BRIGHTNESS:35}
-  radius: ${IMAGE_CLEANING_RADIUS:2}
-  # When false, OCR falls back to the original image if cleaning fails.
-  fail-on-error: ${IMAGE_CLEANING_FAIL_ON_ERROR:false}
-
 spring:
   servlet:
     multipart:

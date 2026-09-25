@@ -32,14 +32,6 @@ on:
         required: true
         type: boolean
         default: false
-      image_cleaning:
-        description: Enable optional handwriting removal/inpainting preprocessing
-        required: true
-        type: choice
-        options:
-          - "false"
-          - "true"
-        default: "false"
 
 permissions:
   contents: read
@@ -68,7 +60,6 @@ jobs:
       OUTPUT_PREFIX: ${{ inputs.output_prefix }}
       MAX_FILES: ${{ inputs.max_files }}
       OVERWRITE: ${{ inputs.overwrite }}
-      IMAGE_CLEANING_ENABLED: ${{ inputs.image_cleaning }}
 
     steps:
       - name: Check out repository
@@ -133,7 +124,6 @@ jobs:
           echo "Output prefix: $OUTPUT_PREFIX"
           echo "Maximum files: $MAX_FILES"
           echo "Overwrite: $OVERWRITE"
-          echo "Image cleaning enabled: $IMAGE_CLEANING_ENABLED"
           echo "Required configuration is present. Secret values were not displayed."
 
       - name: Log in to Azure with GitHub OIDC
